@@ -2,7 +2,9 @@
 
 An intelligent AI-powered chatbot that helps users navigate San Diego's municipal permit system using real data from the City of San Diego Open Data Portal and Claude Sonnet 4.6.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app-url.streamlit.app)
+## 🎥 Demo Video
+
+Watch the live demo: [San Diego FAQ Bot Demo](https://vimeo.com/1173628814?share=copy&fl=sv&fe=ci)
 
 ---
 

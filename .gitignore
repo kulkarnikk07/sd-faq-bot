@@ -2,3 +2,4 @@ data/
 .streamlit/secrets.toml
 .env
 __pycache__/
+.mp4
