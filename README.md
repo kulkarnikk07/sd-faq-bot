@@ -6,8 +6,6 @@ An intelligent AI-powered chatbot that helps users navigate San Diego's municipa
 
 Watch the live demo: [San Diego FAQ Bot Demo](https://vimeo.com/1173628814?share=copy&fl=sv&fe=ci)
 
----
-
 ## ✨ Features
 
 ### 💬 **Interactive Q&A Chat**
