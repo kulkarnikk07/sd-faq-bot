@@ -1,5 +1,24 @@
+# Data files (too large for GitHub)
 data/
+
+# Secrets
 .streamlit/secrets.toml
 .env
+
+# Python cache
 __pycache__/
-.mp4
+*.pyc
+*.pyo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+*.mp4
