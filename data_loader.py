@@ -2,6 +2,8 @@
 San Diego FAQ Bot - Data Loader
 Loads and processes CSV data from San Diego Open Data Portal
 and PDF documents for RAG-based question answering
+
+Supports both local files and remote URLs for deployment flexibility
 """
 
 import pandas as pd
@@ -15,65 +17,138 @@ import json
 class SanDiegoDataLoader:
     """Handles loading and processing of all data sources"""
     
+    # San Diego Open Data Portal URLs
+    DATA_URLS = {
+        'permits_active': 'https://seshat.datasd.org/dsd/dsd_approvals_set2_active.csv',
+        'permits_closed': 'https://seshat.datasd.org/dsd/dsd_approvals_set2_closed.csv',
+        'communities': 'https://seshat.datasd.org/sde/cmty_plan_datasd.csv',
+        'council_districts': 'https://seshat.datasd.org/sde/council_districts_datasd.csv',
+        'police_neighborhoods': 'https://seshat.datasd.org/pd/pd_neighborhoods_datasd.csv',
+        'zoning': 'https://seshat.datasd.org/sde/zoning_datasd.csv',
+    }
+    
     def __init__(self, data_dir: str = "data"):
         self.data_dir = Path(data_dir)
         self.permits_data = None
         self.neighborhoods_data = None
         self.zoning_data = None
         self.pdf_content = None
+        self.use_local = self._check_local_data()
         
+    def _check_local_data(self) -> bool:
+        """Check if local data directory exists and has files"""
+        if not self.data_dir.exists():
+            return False
+        
+        # Check if we have any CSV files locally
+        csv_files = list(self.data_dir.rglob("*.csv"))
+        return len(csv_files) > 0
+    
     def load_all_data(self):
         """Load all available data sources"""
-        print("Loading San Diego data...")
+        mode = "local files" if self.use_local else "remote URLs"
+        print(f"Loading San Diego data from {mode}...")
         
         # Load CSV data
         self.load_permits()
         self.load_neighborhoods()
         self.load_zoning()
         
-        # Load PDF if it exists
+        # Load PDF if it exists (local only)
         self.load_pdf_documents()
         
         print("✅ All data loaded successfully!")
         return self
     
+    def _load_csv(self, local_path: Path, url_key: str, description: str) -> Optional[pd.DataFrame]:
+        """
+        Load CSV from local file if available, otherwise from URL
+        
+        Args:
+            local_path: Path to local CSV file
+            url_key: Key in DATA_URLS dict
+            description: Description for logging
+        
+        Returns:
+            DataFrame or None if loading fails
+        """
+        try:
+            if self.use_local and local_path.exists():
+                print(f"Loading {description} from local file: {local_path}")
+                df = pd.read_csv(local_path, low_memory=False)
+                print(f"  ✓ Loaded {len(df)} rows")
+                return df
+            elif url_key in self.DATA_URLS:
+                print(f"Downloading {description} from URL...")
+                df = pd.read_csv(self.DATA_URLS[url_key], low_memory=False)
+                print(f"  ✓ Downloaded {len(df)} rows")
+                return df
+            else:
+                print(f"  ⚠️  No source available for {description}")
+                return None
+        except Exception as e:
+            print(f"  ✗ Error loading {description}: {e}")
+            return None
+    
     def load_permits(self):
         """Load development permit data"""
         permits_dir = self.data_dir / "permits"
-        
-        if not permits_dir.exists():
-            print("⚠️  Permits directory not found, skipping...")
-            return
-        
         data = {}
         
-        # Load active permits
-        active_file = permits_dir / "active_approvals.csv"
-        if active_file.exists():
-            print(f"Loading active permits from {active_file}...")
-            data['active'] = pd.read_csv(active_file, low_memory=False)
-            print(f"  ✓ Loaded {len(data['active'])} active permits")
+        # Load active permits - try multiple locations
+        active_paths = [
+            self.data_dir / "permits_set2_active_datasd.csv",  # Root level (actual location)
+            permits_dir / "active_approvals.csv",
+            permits_dir / "permits_set2_active_datasd.csv"
+        ]
+        
+        df = None
+        for path in active_paths:
+            if path.exists():
+                df = self._load_csv(path, 'permits_active', 'active permits')
+                break
+        
+        if df is None and 'permits_active' in self.DATA_URLS:
+            df = self._load_csv(Path("nonexistent"), 'permits_active', 'active permits')
+        
+        if df is not None:
+            data['active'] = df
         
         # Load closed permits
-        closed_file = permits_dir / "closed_approvals.csv"
-        if closed_file.exists():
-            print(f"Loading closed permits from {closed_file}...")
-            data['closed'] = pd.read_csv(closed_file, low_memory=False)
-            print(f"  ✓ Loaded {len(data['closed'])} closed permits")
+        closed_paths = [
+            self.data_dir / "permits_set2_closed_datasd.csv",  # Root level (actual location)
+            permits_dir / "closed_approvals.csv",
+            permits_dir / "permits_set2_closed_datasd.csv"
+        ]
         
-        # Load permit dictionary
-        dict_file = permits_dir / "permit_dictionary.csv"
-        if dict_file.exists():
-            print(f"Loading permit dictionary from {dict_file}...")
-            data['dictionary'] = pd.read_csv(dict_file)
-            print(f"  ✓ Loaded permit dictionary")
+        df = None
+        for path in closed_paths:
+            if path.exists():
+                df = self._load_csv(path, 'permits_closed', 'closed permits')
+                break
+        
+        if df is None and 'permits_closed' in self.DATA_URLS:
+            df = self._load_csv(Path("nonexistent"), 'permits_closed', 'closed permits')
+        
+        if df is not None:
+            data['closed'] = df
         
         # Load permit tags
-        tags_file = permits_dir / "permit_tags.csv"
-        if tags_file.exists():
-            print(f"Loading permit tags from {tags_file}...")
-            data['tags'] = pd.read_csv(tags_file, low_memory=False)
-            print(f"  ✓ Loaded {len(data['tags'])} permit tags")
+        tags_paths = [
+            self.data_dir / "permits_project_tags_datasd.csv",  # Root level (actual location)
+            permits_dir / "permit_tags.csv",
+            permits_dir / "permits_project_tags_datasd.csv"
+        ]
+        
+        for path in tags_paths:
+            if path.exists():
+                try:
+                    print(f"Loading permit tags from {path}...")
+                    data['tags'] = pd.read_csv(path, low_memory=False)
+                    print(f"  ✓ Loaded {len(data['tags'])} permit tags")
+                    break
+                except Exception as e:
+                    print(f"  ✗ Error loading permit tags: {e}")
         
         self.permits_data = data
         return data
@@ -81,33 +156,66 @@ class SanDiegoDataLoader:
     def load_neighborhoods(self):
         """Load neighborhood and community data"""
         neighborhoods_dir = self.data_dir / "neighborhoods"
-        
-        if not neighborhoods_dir.exists():
-            print("⚠️  Neighborhoods directory not found, skipping...")
-            return
-        
         data = {}
         
         # Load community planning districts
-        cpd_file = neighborhoods_dir / "community_planning_districts.csv"
-        if cpd_file.exists():
-            print(f"Loading community planning districts from {cpd_file}...")
-            data['communities'] = pd.read_csv(cpd_file)
-            print(f"  ✓ Loaded {len(data['communities'])} communities")
+        # Try multiple possible locations and names
+        cpd_paths = [
+            self.data_dir / "cmty_plan_datasd.csv",  # Root level (actual location)
+            neighborhoods_dir / "community_planning_districts.csv",
+            neighborhoods_dir / "cmty_plan_datasd.csv"
+        ]
+        
+        df = None
+        for path in cpd_paths:
+            if path.exists():
+                df = self._load_csv(path, 'communities', 'community planning districts')
+                break
+        
+        if df is None and 'communities' in self.DATA_URLS:
+            # Try URL as fallback
+            df = self._load_csv(Path("nonexistent"), 'communities', 'community planning districts')
+        
+        if df is not None:
+            data['communities'] = df
         
         # Load council districts
-        council_file = neighborhoods_dir / "council_districts.csv"
-        if council_file.exists():
-            print(f"Loading council districts from {council_file}...")
-            data['council_districts'] = pd.read_csv(council_file)
-            print(f"  ✓ Loaded {len(data['council_districts'])} council districts")
+        council_paths = [
+            self.data_dir / "council_districts_datasd.csv",  # Root level (actual location)
+            neighborhoods_dir / "council_districts.csv",
+            neighborhoods_dir / "council_districts_datasd.csv"
+        ]
+        
+        df = None
+        for path in council_paths:
+            if path.exists():
+                df = self._load_csv(path, 'council_districts', 'council districts')
+                break
+        
+        if df is None and 'council_districts' in self.DATA_URLS:
+            df = self._load_csv(Path("nonexistent"), 'council_districts', 'council districts')
+        
+        if df is not None:
+            data['council_districts'] = df
         
         # Load police neighborhoods
-        police_file = neighborhoods_dir / "police_neighborhoods.csv"
-        if police_file.exists():
-            print(f"Loading police neighborhoods from {police_file}...")
-            data['police_neighborhoods'] = pd.read_csv(police_file)
-            print(f"  ✓ Loaded {len(data['police_neighborhoods'])} police neighborhoods")
+        police_paths = [
+            self.data_dir / "pd_neighborhoods_datasd.csv",  # Root level (actual location)
+            neighborhoods_dir / "police_neighborhoods.csv",
+            neighborhoods_dir / "pd_neighborhoods_datasd.csv"
+        ]
+        
+        df = None
+        for path in police_paths:
+            if path.exists():
+                df = self._load_csv(path, 'police_neighborhoods', 'police neighborhoods')
+                break
+        
+        if df is None and 'police_neighborhoods' in self.DATA_URLS:
+            df = self._load_csv(Path("nonexistent"), 'police_neighborhoods', 'police neighborhoods')
+        
+        if df is not None:
+            data['police_neighborhoods'] = df
         
         self.neighborhoods_data = data
         return data
@@ -115,25 +223,32 @@ class SanDiegoDataLoader:
     def load_zoning(self):
         """Load zoning data"""
         zoning_dir = self.data_dir / "zoning"
-        
-        if not zoning_dir.exists():
-            print("⚠️  Zoning directory not found, skipping...")
-            return
-        
         data = {}
         
-        # Load zoning designations
-        zoning_file = zoning_dir / "zoning_designations.csv"
-        if zoning_file.exists():
-            print(f"Loading zoning designations from {zoning_file}...")
-            data['designations'] = pd.read_csv(zoning_file)
-            print(f"  ✓ Loaded {len(data['designations'])} zoning designations")
+        # Load zoning designations - try multiple locations
+        zoning_paths = [
+            self.data_dir / "zoning_datasd.csv",  # Root level (actual location)
+            zoning_dir / "zoning_designations.csv",
+            zoning_dir / "zoning_datasd.csv"
+        ]
+        
+        df = None
+        for path in zoning_paths:
+            if path.exists():
+                df = self._load_csv(path, 'zoning', 'zoning designations')
+                break
+        
+        if df is None and 'zoning' in self.DATA_URLS:
+            df = self._load_csv(Path("nonexistent"), 'zoning', 'zoning designations')
+        
+        if df is not None:
+            data['designations'] = df
         
         self.zoning_data = data
         return data
     
     def load_pdf_documents(self):
-        """Load PDF municipal documents"""
+        """Load PDF municipal documents (local only)"""
         documents_dir = self.data_dir.parent / "documents"
         
         if not documents_dir.exists():
@@ -222,7 +337,17 @@ class SanDiegoDataLoader:
         communities = self.neighborhoods_data['communities']
         
         # Search for community (case-insensitive)
-        name_column = 'cpname' if 'cpname' in communities.columns else communities.columns[0]
+        # Try different possible column names
+        name_columns = ['cpname', 'name', 'community', 'CPNAME', 'NAME']
+        name_column = None
+        
+        for col in name_columns:
+            if col in communities.columns:
+                name_column = col
+                break
+        
+        if not name_column:
+            return None
         
         match = communities[
             communities[name_column].str.lower() == community_name.lower()
@@ -259,10 +384,17 @@ class SanDiegoDataLoader:
             communities = self.neighborhoods_data['communities']
             
             # Get community names
-            name_col = 'cpname' if 'cpname' in communities.columns else communities.columns[0]
-            community_list = communities[name_col].tolist()
-            context_parts.append(f"San Diego has {len(community_list)} community planning districts:\n")
-            context_parts.append(", ".join(community_list[:50]))  # First 50
+            name_columns = ['cpname', 'name', 'community', 'CPNAME', 'NAME']
+            name_col = None
+            for col in name_columns:
+                if col in communities.columns:
+                    name_col = col
+                    break
+            
+            if name_col:
+                community_list = communities[name_col].tolist()
+                context_parts.append(f"San Diego has {len(community_list)} community planning districts:\n")
+                context_parts.append(", ".join(str(c) for c in community_list[:50]))  # First 50
         
         return "\n".join(context_parts)
     
@@ -272,7 +404,8 @@ class SanDiegoDataLoader:
             'permits': {},
             'neighborhoods': {},
             'zoning': {},
-            'documents': {}
+            'documents': {},
+            'data_source': 'local files' if self.use_local else 'remote URLs'
         }
         
         if self.permits_data:
@@ -307,6 +440,38 @@ class SanDiegoDataLoader:
         
         return summary
 
+
+# Convenience function for backwards compatibility
+def load_data(data_dir: str = "data"):
+    """Load all San Diego data - compatible with existing app.py"""
+    loader = SanDiegoDataLoader(data_dir)
+    loader.load_all_data()
+    return loader
+
+
+if __name__ == "__main__":
+    # Test the data loader
+    print("=" * 60)
+    print("San Diego Data Loader Test")
+    print("=" * 60)
+    
+    loader = load_data()
+    
+    print("\n" + "=" * 60)
+    print("Data Summary:")
+    print("=" * 60)
+    
+    summary = loader.get_data_summary()
+    print(json.dumps(summary, indent=2))
+    
+    print("\n" + "=" * 60)
+    print("Permit Statistics:")
+    print("=" * 60)
+    
+    stats = loader.get_permit_statistics()
+    print(json.dumps(stats, indent=2))
+    
+    print("\n✅ Data loader test complete!")
 
 # Convenience function for backwards compatibility
 def load_data(data_dir: str = "data"):

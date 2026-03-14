@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 from data_loader import load_data
 from bot import create_bot
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
@@ -340,53 +341,71 @@ def main():
         st.subheader("Summarize Council Meetings by Neighborhood")
         st.markdown("Extract neighborhood-specific information from council meetings or transcripts.")
         
-        col1, col2 = st.columns([1, 1])
+        # Get available communities for dropdown
+        neighborhood_options = []
         
-        with col1:
-            neighborhood = st.text_input(
-                "Neighborhood Name",
-                placeholder="Example: Downtown, La Jolla, Barrio Logan"
-            )
-        
-        with col2:
-            # Get available communities if possible
+        try:
             if data_loader.neighborhoods_data and 'communities' in data_loader.neighborhoods_data:
                 communities = data_loader.neighborhoods_data['communities']
-                name_col = 'cpname' if 'cpname' in communities.columns else communities.columns[0]
-                community_list = sorted(communities[name_col].unique().tolist())
+                # Try different possible column names
+                name_col = None
+                for col in ['cpname', 'name', 'community', 'CPNAME', 'NAME']:
+                    if col in communities.columns:
+                        name_col = col
+                        break
                 
-                selected_community = st.selectbox(
-                    "Or Select from Communities",
-                    [""] + community_list,
-                    index=0
-                )
-                
-                if selected_community:
-                    neighborhood = selected_community
+                if name_col:
+                    community_list = sorted([str(name) for name in communities[name_col].unique() if pd.notna(name)])
+                    neighborhood_options = community_list
+                else:
+                    st.warning("⚠️ Could not find neighborhood names in data")
+        except Exception as e:
+            st.warning(f"⚠️ Error loading neighborhoods: {str(e)}")
+        
+        # If no data loaded, provide manual options
+        if not neighborhood_options:
+            neighborhood_options = [
+                "Barrio Logan", "City Heights", "Clairemont", "College Area", 
+                "Downtown", "Golden Hill", "La Jolla", "Linda Vista", 
+                "Mira Mesa", "Mission Valley", "North Park", "Ocean Beach",
+                "Pacific Beach", "Point Loma", "Rancho Bernardo", "Scripps Ranch"
+            ]
+            st.info("ℹ️ Using default neighborhood list")
+        
+        # Neighborhood dropdown - more compact
+        selected_neighborhood = st.selectbox(
+            "Select Neighborhood",
+            options=[""] + neighborhood_options,
+            format_func=lambda x: "Choose a neighborhood..." if x == "" else x,
+            help=f"{len(neighborhood_options)} neighborhoods available"
+        )
         
         content = st.text_area(
             "Meeting Transcript or Content",
             placeholder="Paste council meeting transcript, agenda, or other content here...",
-            height=300
+            height=250,
+            help="Paste the full meeting transcript or relevant content to analyze"
         )
         
         if st.button("📊 Generate Summary", use_container_width=True):
-            if not neighborhood.strip() or not content.strip():
-                st.warning("⚠️ Please provide both neighborhood and content")
+            if not selected_neighborhood:
+                st.warning("⚠️ Please select a neighborhood")
+            elif not content.strip():
+                st.warning("⚠️ Please provide meeting content")
             else:
-                with st.spinner(f"📝 Analyzing content for {neighborhood}..."):
+                with st.spinner(f"📝 Analyzing content for {selected_neighborhood}..."):
                     try:
-                        summary = bot.summarize_for_neighborhood(content, neighborhood)
+                        summary = bot.summarize_for_neighborhood(content, selected_neighborhood)
                         
-                        st.success(f"✅ Summary for {neighborhood}")
+                        st.success(f"✅ Summary for {selected_neighborhood}")
                         st.markdown("---")
                         st.markdown(summary)
                         
                         # Download option as Markdown
                         st.download_button(
                             label="📥 Download Summary",
-                            data=f"# Summary for {neighborhood}\n\n{summary}",
-                            file_name=f"{neighborhood.lower().replace(' ', '_')}_summary.md",
+                            data=f"# Summary for {selected_neighborhood}\n\n{summary}",
+                            file_name=f"{selected_neighborhood.lower().replace(' ', '_')}_summary.md",
                             mime="text/markdown"
                         )
                     except Exception as e:
