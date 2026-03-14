@@ -1,0 +1,16 @@
+# Core dependencies
+anthropic>=0.18.0
+python-dotenv>=1.0.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# PDF processing
+PyPDF2>=3.0.0
+
+# Streamlit (web framework)
+streamlit>=1.30.0
+
+# Optional: For better PDF processing
+# pdfplumber>=0.10.0
